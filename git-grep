@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+#
+# Create a temporary directory
+temp_dir=$(mktemp -d)
+# Ensure the temporary directory is deleted when the script exits
+trap "rm -rf $temp_dir" EXIT
+
+git grep -n "$@" $(git rev-list --all) | awk -F: '{print $1":"$2":"$3}' |
+  fzf --cycle -i -e --no-multi --ansi \
+    --preview '
+    COMMIT=$(echo {} | cut -d: -f1);
+    FILE=$(echo {} | cut -d: -f2);
+    LINE=$(echo {} | cut -d: -f3);
+    TMPFILE="'"$temp_dir"'/$COMMIT/$FILE";
+    mkdir -p "$(dirname "$TMPFILE")";
+    git show $COMMIT:$FILE > "$TMPFILE";
+    bat --color always --highlight-line=$LINE --line-range $LINE:+100 "$TMPFILE"' \
+    --preview-window=up:60% \
+    --bind 'enter:execute:
+    TMPFILE_LINE="'"$temp_dir"'/$(echo {} | sed "s#:#/#")";
+    COMMIT=$(echo {} | cut -d: -f1);
+    WORKTREE="'"$temp_dir"'/$COMMIT"
+    test "$WORKTREE" != / && rm -rf "$WORKTREE"
+    git worktree add -f "$WORKTREE" $COMMIT
+    code --goto $TMPFILE_LINE' \
+    --bind 'ctrl-p:toggle-preview' \
+    --bind 'ctrl-g:preview-page-up,ctrl-h:preview-page-down' \
+    --header "enter: vscode, C-p:toggle, C-g:up, C-h:down"
