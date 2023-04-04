@@ -2,8 +2,21 @@
 #
 # Create a temporary directory
 temp_dir=$(mktemp -d)
-# Ensure the temporary directory is deleted when the script exits
-trap "rm -rf $temp_dir" EXIT
+
+# Store the list of existing worktree directories
+existing_worktrees=$(git worktree list --porcelain | grep 'worktree' | awk '{print $2}')
+
+# Ensure the temporary directory is deleted and only newly created worktree directories are removed when the script exits
+cleanup() {
+  rm -rf "$temp_dir"
+  new_worktrees=$(git worktree list --porcelain | grep 'worktree' | awk '{print $2}')
+  for new_worktree in $new_worktrees; do
+    if ! echo "$existing_worktrees" | grep -q -F "$new_worktree"; then
+      git worktree remove "$new_worktree"
+    fi
+  done
+}
+trap cleanup EXIT
 
 git grep -n "$@" $(git rev-list --all) | awk -F: '{print $1":"$2":"$3}' |
   fzf --cycle -i -e --no-multi --ansi \
@@ -22,7 +35,8 @@ git grep -n "$@" $(git rev-list --all) | awk -F: '{print $1":"$2":"$3}' |
     WORKTREE="'"$temp_dir"'/$COMMIT"
     test "$WORKTREE" != / && rm -rf "$WORKTREE"
     git worktree add -f "$WORKTREE" $COMMIT
-    code --goto $TMPFILE_LINE' \
+    code "$WORKTREE"
+    code --goto "$TMPFILE_LINE"' \
     --bind 'ctrl-p:toggle-preview' \
     --bind 'ctrl-g:preview-page-up,ctrl-h:preview-page-down' \
     --header "enter: vscode, C-p:toggle, C-g:up, C-h:down"
